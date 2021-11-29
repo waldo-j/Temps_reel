@@ -18,8 +18,8 @@ typedef char MY_TYPE;
 #define FORMAT RTAUDIO_SINT8
 */
 
-typedef signed short MY_TYPE;
-#define FORMAT RTAUDIO_SINT16
+//typedef signed short MY_TYPE;
+//#define FORMAT RTAUDIO_SINT16
 
 /*
 typedef S24 MY_TYPE;
@@ -30,10 +30,21 @@ typedef signed long MY_TYPE;
 
 typedef float MY_TYPE;
 #define FORMAT RTAUDIO_FLOAT32
+*/
 
 typedef double MY_TYPE;
 #define FORMAT RTAUDIO_FLOAT64
-*/
+
+
+
+//! The structure for specifying input or output stream parameters.
+struct dataConv {
+  double* repImpul;     /*pointer to impulse response*/
+  unsigned int repImpulLength; /*Length of the impulse response*/
+  //unsigned int samplingFrequency;    /*!< Sampling frequency */
+  unsigned int* bufferInter; /*Intermediary buffer*/
+};
+
 
 void usage( void ) {
   // Error function in case of incorrect command-line
@@ -58,6 +69,20 @@ int inout( void *outputBuffer, void *inputBuffer, unsigned int /*nBufferFrames*/
   unsigned int *bytes = (unsigned int *) data;
   memcpy( outputBuffer, inputBuffer, *bytes );
   printf("%d\n",*bytes);
+  return 0;
+}
+
+
+
+/*
+Callback function doing convolution 
+*/
+int callback_conv( void *outputBuffer, void *inputBuffer, unsigned int /*nBufferFrames*/,
+           double /*streamTime*/, RtAudioStreamStatus status, void *data ){
+    
+  double conv
+
+
   return 0;
 }
 
@@ -107,7 +132,7 @@ int main( int argc, char *argv[] )
   //options.flags |= RTAUDIO_NONINTERLEAVED;
   bufferBytes = 23;
   try {
-    adac.openStream( &oParams, &iParams, FORMAT, fs, &bufferFrames, &inout, (void *)&bufferBytes, &options );
+    adac.openStream( &oParams, &iParams, FORMAT, fs, &bufferFrames, &callback_conv, (void *)&bufferBytes, &options );
   }
   catch ( RtAudioError& e ) {
     std::cout << '\n' << e.getMessage() << '\n' << std::endl;
@@ -118,7 +143,7 @@ int main( int argc, char *argv[] )
   std::cout << "\nStream latency = " << adac.getStreamLatency() << " frames" << std::endl;
 
   bufferBytes = bufferFrames * channels * sizeof( MY_TYPE );
-  //bufferBytes = 23;
+
   try {
     adac.startStream();
 
