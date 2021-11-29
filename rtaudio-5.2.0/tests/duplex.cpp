@@ -57,6 +57,7 @@ int inout( void *outputBuffer, void *inputBuffer, unsigned int /*nBufferFrames*/
 
   unsigned int *bytes = (unsigned int *) data;
   memcpy( outputBuffer, inputBuffer, *bytes );
+  printf("%d\n",*bytes);
   return 0;
 }
 
@@ -104,7 +105,7 @@ int main( int argc, char *argv[] )
 
   RtAudio::StreamOptions options;
   //options.flags |= RTAUDIO_NONINTERLEAVED;
-
+  bufferBytes = 23;
   try {
     adac.openStream( &oParams, &iParams, FORMAT, fs, &bufferFrames, &inout, (void *)&bufferBytes, &options );
   }
@@ -117,6 +118,7 @@ int main( int argc, char *argv[] )
   std::cout << "\nStream latency = " << adac.getStreamLatency() << " frames" << std::endl;
 
   bufferBytes = bufferFrames * channels * sizeof( MY_TYPE );
+  //bufferBytes = 23;
   try {
     adac.startStream();
 

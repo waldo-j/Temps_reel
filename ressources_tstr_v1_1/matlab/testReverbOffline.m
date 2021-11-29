@@ -7,12 +7,12 @@ close all;
 
 % read the sample waveform
 filename='./MG_list1_sent381.wav';
-[x,Fs,bits] = wavread(filename);
+[x,Fs] = audioread(filename);
 
 
 % read the impulse response waveform
 filename='./IMreverbs1/Five Columns.wav';
-[imp,Fsimp,bitsimp] = wavread(filename);
+[imp,Fsimp] = audioread(filename);
 
 % Keep only one channel 
 imp_left = imp(:,1);
