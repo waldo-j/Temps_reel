@@ -42,7 +42,8 @@ struct dataConv {
   double* repImpul;     /*pointer to impulse response*/
   unsigned int repImpulLength; /*Length of the impulse response*/
   //unsigned int samplingFrequency;    /*!< Sampling frequency */
-  unsigned int* bufferInter; /*Intermediary buffer*/
+  double* bufferInter; /*Intermediary buffer*/
+  unsigned int inputBufferLength; /*L input buffer length*/
 };
 
 
@@ -79,17 +80,39 @@ Callback function doing convolution
 */
 int callback_conv( void *outputBuffer, void *inputBuffer, unsigned int /*nBufferFrames*/,
            double /*streamTime*/, RtAudioStreamStatus status, void *data ){
-    
-  double conv
 
+  dataConv* d = (dataConv*)data;
+  unsigned int L = d->inputBufferLength;
+  unsigned int M = d->repImpulLength;
+
+  double conv[L + M - 1];
+  for (unsigned int i = 0; i < L; i++){
+    for (unsigned int j = 0; j < M; j++){
+      conv[i + j] += d->repImpul[j] * ((double*)inputBuffer)[L - i - 1];
+      //printf("j : %d \t valeur : %f\n",j,((double*)d->repImpul)[j]);
+    } 
+  }
+  
+
+
+  memcpy(outputBuffer,conv,(size_t)L * sizeof(double));
+  for (size_t i = 0; i < d->inputBufferLength; i++)
+  {
+    /* code */
+    printf("i: %d\t",i);
+    printf("input: %f\t",((double*)inputBuffer)[i]);
+    printf("conv: %f\t",((double*)conv)[i]);
+    printf("output: %f\n",((double*)outputBuffer)[i]);
+  }
+  
 
   return 0;
 }
 
 int main( int argc, char *argv[] )
 {
-  unsigned int channels, fs, bufferBytes, oDevice = 0, iDevice = 0, iOffset = 0, oOffset = 0;
-
+  unsigned int channels, fs, oDevice = 0, iDevice = 0, iOffset = 0, oOffset = 0;
+  dataConv bufferBytes;
   // Minimal command-line checking
   if (argc < 3 || argc > 7 ) usage();
 
@@ -130,7 +153,17 @@ int main( int argc, char *argv[] )
 
   RtAudio::StreamOptions options;
   //options.flags |= RTAUDIO_NONINTERLEAVED;
-  bufferBytes = 23;
+  double* tab_tempo = (double*)malloc(sizeof(double)  * 5);
+  for(int i = 0; i < 5; i++){
+    tab_tempo[i] =  0;
+  }
+  tab_tempo[0] = 1;
+  bufferBytes.bufferInter = NULL;
+  bufferBytes.inputBufferLength = bufferFrames * channels;
+  bufferBytes.repImpul = tab_tempo;
+  bufferBytes.repImpulLength = 5; 
+
+
   try {
     adac.openStream( &oParams, &iParams, FORMAT, fs, &bufferFrames, &callback_conv, (void *)&bufferBytes, &options );
   }
@@ -142,7 +175,7 @@ int main( int argc, char *argv[] )
   // Test RtAudio functionality for reporting latency.
   std::cout << "\nStream latency = " << adac.getStreamLatency() << " frames" << std::endl;
 
-  bufferBytes = bufferFrames * channels * sizeof( MY_TYPE );
+  //bufferBytes = bufferFrames * channels * sizeof( MY_TYPE );
 
   try {
     adac.startStream();
