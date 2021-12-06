@@ -44,6 +44,7 @@ struct dataConv {
   //unsigned int samplingFrequency;    /*!< Sampling frequency */
   double* bufferInter; /*Intermediary buffer*/
   unsigned int inputBufferLength; /*L input buffer length*/
+  double* conv; /* array with the convolution between impulse and input*/
 };
 
 
@@ -73,38 +74,97 @@ int inout( void *outputBuffer, void *inputBuffer, unsigned int /*nBufferFrames*/
   return 0;
 }
 
+int readFile(dataConv data, size_t blocSize,const char* filename){
+  FILE* stream = fopen(filename,"r");
+  if ( stream == NULL ) {
+        fprintf( stderr, "Cannot open file for reading\n" );
+        exit( -1 );
+    }
+  // Search size of file
+  int blocCount = 0;
+  double test_read;
 
+
+  while(fread(&test_read,blocSize,1,stream) == 1){
+    blocCount ++;
+  }
+  fclose(stream);
+
+  stream = fopen(filename,"r");
+  if ( stream == NULL ) {
+        fprintf( stderr, "Cannot open file for reading\n" );
+        exit( -1 );
+  }
+
+  printf("BlocCOunt : %d \n",blocCount);
+
+  data.repImpulLength = blocCount;
+  data.repImpul = (double*)malloc(blocSize * blocCount);
+  size_t x = fread(data.repImpul, blocSize, blocCount, stream) ;
+  if( x != blocCount){
+    printf("X = %d; BlocCount = %d ; BlocSize = %d \n",x, blocCount,blocSize);
+    printf("ERROR FREAD\n");
+    exit(-1);
+  }
+
+
+
+
+
+/*
+  if(blocCount != fread(outputBuffer,blocSize, blocCount,stream)){
+    printf("ERROR READING FILE");
+    return -1;
+  } */
+  return 0;
+
+}
 
 /*
 Callback function doing convolution 
 */
 int callback_conv( void *outputBuffer, void *inputBuffer, unsigned int /*nBufferFrames*/,
            double /*streamTime*/, RtAudioStreamStatus status, void *data ){
-
   dataConv* d = (dataConv*)data;
-  unsigned int L = d->inputBufferLength;
-  unsigned int M = d->repImpulLength;
+  int L = d->inputBufferLength;
+  int M = d->repImpulLength;
 
-  double conv[L + M - 1];
-  for (unsigned int i = 0; i < L; i++){
-    for (unsigned int j = 0; j < M; j++){
-      conv[i + j] += d->repImpul[j] * ((double*)inputBuffer)[L - i - 1];
-      //printf("j : %d \t valeur : %f\n",j,((double*)d->repImpul)[j]);
-    } 
+  // Create an array initialy with null values
+
+
+  for(int i = 0; i < L + M - 1; i++){
+    double sum = 0;
+    for(int j = 0; j < L; j++){
+      if(i >= j && i - j < M){
+        sum += ((double*)inputBuffer)[j] * d->repImpul[i - j];
+      }
+    }
+    d->conv[i] = sum;
+    // Add overlapp-add
+    if(i <= M - 1){
+      d->conv[i] += d->bufferInter[i];
+    }
   }
   
-
-
-  memcpy(outputBuffer,conv,(size_t)L * sizeof(double));
-  for (size_t i = 0; i < d->inputBufferLength; i++)
+  // Update outputBuffer
+  memcpy(outputBuffer,d->conv,L * sizeof(double));
+/*
+  for (int i = 0; i < d->inputBufferLength; i++)
   {
-    /* code */
+   
     printf("i: %d\t",i);
     printf("input: %f\t",((double*)inputBuffer)[i]);
     printf("conv: %f\t",((double*)conv)[i]);
+    if(i < M - 1) printf("overlapp add : %f\t", d->bufferInter[i]);
     printf("output: %f\n",((double*)outputBuffer)[i]);
-  }
-  
+  }*/
+
+  // Update interBuffer
+  memcpy(d->bufferInter, d->conv + L, (M - 1) * sizeof(double));
+  /*
+  for(int i = 0; i < M - 1; i++){
+    printf("%f\n", conv[L + i]);
+  }*/
 
   return 0;
 }
@@ -153,16 +213,20 @@ int main( int argc, char *argv[] )
 
   RtAudio::StreamOptions options;
   //options.flags |= RTAUDIO_NONINTERLEAVED;
-  double* tab_tempo = (double*)malloc(sizeof(double)  * 5);
-  for(int i = 0; i < 5; i++){
+  int repImpulLength = 5;
+  double* tab_tempo = (double*)malloc(sizeof(double)  * repImpulLength);
+  for(int i = 0; i < repImpulLength; i++){
     tab_tempo[i] =  0;
   }
   tab_tempo[0] = 1;
-  bufferBytes.bufferInter = NULL;
-  bufferBytes.inputBufferLength = bufferFrames * channels;
-  bufferBytes.repImpul = tab_tempo;
-  bufferBytes.repImpulLength = 5; 
 
+  int blocSize = sizeof(double);
+  char* fileName = "../../ressources_tstr_v1_1/c/impres";
+  readFile(bufferBytes,blocSize,fileName);
+
+  bufferBytes.bufferInter = (double*) malloc(sizeof(double) * (repImpulLength - 1 ));
+  bufferBytes.inputBufferLength = bufferFrames * channels;
+  bufferBytes.conv = (double*) malloc(sizeof(double) * (bufferBytes.inputBufferLength + bufferBytes.repImpulLength - 1));
 
   try {
     adac.openStream( &oParams, &iParams, FORMAT, fs, &bufferFrames, &callback_conv, (void *)&bufferBytes, &options );
