@@ -12,6 +12,9 @@
 #include <iostream>
 #include <cstdlib>
 #include <cstring>
+#include <sys/time.h>
+#include <sys/resource.h>
+#include <math.h>
 
 /*
 typedef char MY_TYPE;
@@ -48,6 +51,15 @@ struct dataConv {
 };
 
 
+double get_process_time() {
+    struct rusage usage;
+    if( 0 == getrusage(RUSAGE_SELF, &usage) ) {
+        return (double)(usage.ru_utime.tv_sec + usage.ru_stime.tv_sec) +
+               (double)(usage.ru_utime.tv_usec + usage.ru_stime.tv_usec) / 1.0e6;
+    }
+    return 0;
+}
+
 void usage( void ) {
   // Error function in case of incorrect command-line
   // argument specifications
@@ -67,21 +79,20 @@ int inout( void *outputBuffer, void *inputBuffer, unsigned int /*nBufferFrames*/
   // Since the number of input and output channels is equal, we can do
   // a simple buffer copy operation here.
   if ( status ) std::cout << "Stream over/underflow detected." << std::endl;
-
-  unsigned int *bytes = (unsigned int *) data;
-  memcpy( outputBuffer, inputBuffer, *bytes );
-  printf("%d\n",*bytes);
+  dataConv* d = (dataConv*)data;
+  int L = d->inputBufferLength;
+  memcpy( outputBuffer, inputBuffer, L * sizeof(double));
+ // printf("%d\n",*bytes);
   return 0;
 }
-
-int readFile(dataConv data, size_t blocSize,const char* filename){
+size_t getFileSize(size_t blocSize,const char* filename){
   FILE* stream = fopen(filename,"r");
   if ( stream == NULL ) {
         fprintf( stderr, "Cannot open file for reading\n" );
         exit( -1 );
     }
   // Search size of file
-  int blocCount = 0;
+  size_t blocCount = 0;
   double test_read;
 
 
@@ -89,8 +100,12 @@ int readFile(dataConv data, size_t blocSize,const char* filename){
     blocCount ++;
   }
   fclose(stream);
+  return blocCount;
+}
 
-  stream = fopen(filename,"r");
+
+int readFile(dataConv* data,size_t blocSize, size_t blocCount,const char* filename){
+  FILE* stream = fopen(filename,"r");
   if ( stream == NULL ) {
         fprintf( stderr, "Cannot open file for reading\n" );
         exit( -1 );
@@ -98,24 +113,15 @@ int readFile(dataConv data, size_t blocSize,const char* filename){
 
   printf("BlocCOunt : %d \n",blocCount);
 
-  data.repImpulLength = blocCount;
-  data.repImpul = (double*)malloc(blocSize * blocCount);
-  size_t x = fread(data.repImpul, blocSize, blocCount, stream) ;
+  data->repImpulLength = blocCount;
+  printf("M2 : %d \n", data->repImpulLength);
+  data->repImpul = (double*)malloc(blocSize * blocCount);
+  size_t x = fread(data->repImpul, blocSize, blocCount, stream) ;
   if( x != blocCount){
-    printf("X = %d; BlocCount = %d ; BlocSize = %d \n",x, blocCount,blocSize);
+    
     printf("ERROR FREAD\n");
     exit(-1);
   }
-
-
-
-
-
-/*
-  if(blocCount != fread(outputBuffer,blocSize, blocCount,stream)){
-    printf("ERROR READING FILE");
-    return -1;
-  } */
   return 0;
 
 }
@@ -128,25 +134,32 @@ int callback_conv( void *outputBuffer, void *inputBuffer, unsigned int /*nBuffer
   dataConv* d = (dataConv*)data;
   int L = d->inputBufferLength;
   int M = d->repImpulLength;
-
+double tic = get_process_time();
   // Create an array initialy with null values
+  
 
 
   for(int i = 0; i < L + M - 1; i++){
     double sum = 0;
     for(int j = 0; j < L; j++){
-      if(i >= j && i - j < M){
+      if(i >= j && (i - j) < M){
+        //printf("B j : %d \n",j);
         sum += ((double*)inputBuffer)[j] * d->repImpul[i - j];
       }
+      //printf("B j : %d \n",j);
     }
+    //printf("B\n");
     d->conv[i] = sum;
     // Add overlapp-add
     if(i <= M - 1){
+      //printf("C %d  \n", i);
       d->conv[i] += d->bufferInter[i];
+      //printf("C2   \n");
     }
   }
   
   // Update outputBuffer
+  
   memcpy(outputBuffer,d->conv,L * sizeof(double));
 /*
   for (int i = 0; i < d->inputBufferLength; i++)
@@ -154,18 +167,22 @@ int callback_conv( void *outputBuffer, void *inputBuffer, unsigned int /*nBuffer
    
     printf("i: %d\t",i);
     printf("input: %f\t",((double*)inputBuffer)[i]);
-    printf("conv: %f\t",((double*)conv)[i]);
+    printf("conv: %f\t",(d->conv)[i]);
     if(i < M - 1) printf("overlapp add : %f\t", d->bufferInter[i]);
     printf("output: %f\n",((double*)outputBuffer)[i]);
   }*/
 
   // Update interBuffer
+  
   memcpy(d->bufferInter, d->conv + L, (M - 1) * sizeof(double));
+  
+
   /*
   for(int i = 0; i < M - 1; i++){
     printf("%f\n", conv[L + i]);
   }*/
-
+double toc = get_process_time();
+printf("Elapsed time: %f\n",(toc-tic));
   return 0;
 }
 
@@ -213,23 +230,24 @@ int main( int argc, char *argv[] )
 
   RtAudio::StreamOptions options;
   //options.flags |= RTAUDIO_NONINTERLEAVED;
-  int repImpulLength = 5;
-  double* tab_tempo = (double*)malloc(sizeof(double)  * repImpulLength);
-  for(int i = 0; i < repImpulLength; i++){
-    tab_tempo[i] =  0;
-  }
-  tab_tempo[0] = 1;
-
   int blocSize = sizeof(double);
   char* fileName = "../../ressources_tstr_v1_1/c/impres";
-  readFile(bufferBytes,blocSize,fileName);
+  size_t blocCount = 20000; //getFileSize(blocSize,fileName);
+  readFile(&bufferBytes,blocSize,blocCount,fileName);
 
-  bufferBytes.bufferInter = (double*) malloc(sizeof(double) * (repImpulLength - 1 ));
+  bufferBytes.bufferInter = (double*) malloc(sizeof(double) * (bufferBytes.repImpulLength - 1 ));
   bufferBytes.inputBufferLength = bufferFrames * channels;
   bufferBytes.conv = (double*) malloc(sizeof(double) * (bufferBytes.inputBufferLength + bufferBytes.repImpulLength - 1));
+  printf("REpImpLength = %d \n", bufferBytes.repImpulLength);
+  printf("InputLength = %d \n", bufferBytes.inputBufferLength);
+
+  for (int i = 0; i< 1000; i++){
+    printf("%d : %f\n", i, bufferBytes.repImpul[i]);
+  }
 
   try {
     adac.openStream( &oParams, &iParams, FORMAT, fs, &bufferFrames, &callback_conv, (void *)&bufferBytes, &options );
+
   }
   catch ( RtAudioError& e ) {
     std::cout << '\n' << e.getMessage() << '\n' << std::endl;
@@ -238,8 +256,7 @@ int main( int argc, char *argv[] )
 
   // Test RtAudio functionality for reporting latency.
   std::cout << "\nStream latency = " << adac.getStreamLatency() << " frames" << std::endl;
-
-  //bufferBytes = bufferFrames * channels * sizeof( MY_TYPE );
+    //bufferBytes = bufferFrames * channels * sizeof( MY_TYPE );
 
   try {
     adac.startStream();
